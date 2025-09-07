@@ -1,6 +1,6 @@
 ; Build params: ------------------------------------------------------------------------------
 
-CHEATS set 1
+CHEATS set 0
 SIX_BUTTON_SUPPORT set 1
 
 ; Constants: ---------------------------------------------------------------------------------
@@ -11,13 +11,15 @@ SIX_BUTTON_SUPPORT set 1
 	MD_PLUS_CMD_PORT:				equ $0003F7FE
 	MD_PLUS_RESPONSE_PORT:			equ $0003F7FC
 
-	OFFSET_START_PLAY_CALL:			equ $00005494
-	OFFSET_HANDLE_SOUND_COMMAND:	equ $00030364
-	OFFSET_LOSE_HURT_FUNCTION:		equ $00008E5E
+	RESET_VECTOR_ORIGINAL:			equ $000046CC
+
+	OFFSET_RESET_VECTOR:			equ $00000004
 	OFFSET_SOUND_REQUEST_Z80_BUS:   equ $00000F06
-	OFFSET_MOVEMENT_FUNCTION:		equ $00008A54
 	OFFSET_AFTER_CONTROLLER_READ:	equ $000012AC
+	OFFSET_START_PLAY_CALL:			equ $00005494
 	OFFSET_MOVEMENT_TURN_CODE:		equ $00008AB8
+	OFFSET_LOSE_HURT_FUNCTION:		equ $00008E5E
+	OFFSET_HANDLE_SOUND_COMMAND:	equ $00030364
 
 	RAM_BUTTON_STATE:					equ $FF2928
 	RAM_CONFIGURED_SHOOT_BUTTON_BIT:	equ $FF3FA3
@@ -28,7 +30,8 @@ SIX_BUTTON_SUPPORT set 1
 	; Own RAM values:
 	RAM_FADE_OUT_PLAY_TRACK_NUMBER: equ $FFFF50
 	RAM_MUSIC_STOPPED:				equ $FFFF51
-	RAM_SIX_BUTTON_STATE:			equ $FFFF52
+	RAM_FADE_OUT_COUNTER:			equ $FFFF52
+	RAM_SIX_BUTTON_STATE:			equ $FFFF54
 
 	REGISTER_CNT1_DATA:		equ $A10003
 	REGISTER_Z80_BUS_REQ:	equ $A11100 
@@ -60,6 +63,9 @@ SIX_BUTTON_SUPPORT set 1
 
 ; Overrides: ---------------------------------------------------------------------------------
 
+	org OFFSET_RESET_VECTOR
+	dc.l DETOUR_RESET_VECTOR
+
 	if CHEATS
 		org OFFSET_LOSE_HURT_FUNCTION
 		nop
@@ -74,79 +80,85 @@ SIX_BUTTON_SUPPORT set 1
 	nop
 
 	if SIX_BUTTON_SUPPORT
-	org OFFSET_AFTER_CONTROLLER_READ
-	jsr DETOUR_READ_6_BUTTON
+		org OFFSET_AFTER_CONTROLLER_READ
+		jsr DETOUR_READ_6_BUTTON
 
-	org $8AB8
-	jsr DETOUR_MOVEMENT
-	nop
+		org OFFSET_MOVEMENT_TURN_CODE
+		jsr DETOUR_MOVEMENT
+		nop
 	endif
 
 ; Detours: -----------------------------------------------------------------------------------
 
-	org $000FF990
+	org $00100000
+
+DETOUR_RESET_VECTOR:
+	move.w	#$1300,D0
+	jsr		WRITE_MD_PLUS_FUNCTION
+	incbin	"intro.bin"								; Show MD+ intro screen
+	jmp		RESET_VECTOR_ORIGINAL					; Return to game's original entry point
 
 	if SIX_BUTTON_SUPPORT
 DETOUR_MOVEMENT:
-	move D0,-(A7)
-	move.b RAM_CONFIGURED_SHOOT_BUTTON_BIT,D0
-	btst D0,RAM_SIX_BUTTON_STATE
-	bne .strafe
-	move.b D1,($26,A6)
+		move D0,-(A7)
+		move.b RAM_CONFIGURED_SHOOT_BUTTON_BIT,D0
+		btst D0,RAM_SIX_BUTTON_STATE
+		bne .strafe
+		move.b D1,($26,A6)
 .strafe
-	move.w ($24,A6),D2
-	move (A7)+,D0
-	rts
+		move.w ($24,A6),D2
+		move (A7)+,D0
+		rts
 
 DETOUR_READ_6_BUTTON:
-	movem D0/D1/D2,-(A7)
-	or.b D6,D7
-	not.b D7
-	move.w	A6,D0
-	cmpi.b #$03,D0
-	bne .secondControllerRead
-	move.b #$0,REGISTER_CNT1_DATA			; Cycle 3
-	nop
-	nop
-	move.b #$40,REGISTER_CNT1_DATA			; Cycle 4
-	nop
-	nop
-	move.b #$0,REGISTER_CNT1_DATA			; Cycle 5
-	nop
-	nop
-	move.b REGISTER_CNT1_DATA,D0
-	cmpi.b #%00110000,REGISTER_CNT1_DATA	; Check for 6 Button controller id
-	beq .isSixButtonController
-	clr.b D0
-	bra .notSixButtonController
+		movem D0/D1/D2,-(A7)
+		or.b D6,D7
+		not.b D7
+		move.w	A6,D0
+		cmpi.b #$03,D0
+		bne .secondControllerRead
+		move.b #$0,REGISTER_CNT1_DATA			; Cycle 3
+		nop
+		nop
+		move.b #$40,REGISTER_CNT1_DATA			; Cycle 4
+		nop
+		nop
+		move.b #$0,REGISTER_CNT1_DATA			; Cycle 5
+		nop
+		nop
+		move.b REGISTER_CNT1_DATA,D0
+		cmpi.b #%00110000,REGISTER_CNT1_DATA	; Check for 6 Button controller id
+		beq .isSixButtonController
+		clr.b D0
+		bra .notSixButtonController
 .isSixButtonController
-	nop
-	nop
-	move.b #$40,REGISTER_CNT1_DATA			; Cycle 6
-	nop
-	nop
-	move.b REGISTER_CNT1_DATA,D0
-	not D0
-	andi.b #$7,D0
-	lsl.b #$4,D0
-											; Swap bits so they are arranged like ABC in D7
-    move.b  D0,D1							; copy original byte
-    and.b   #$10,D1							; isolate bit 4
-    lsl.b   #1,D1							; move bit 4 to bit 5 position
-    move.b  D0,D2
-    and.b   #$20,D2							; isolate bit 5
-    lsr.b   #1,D2							; move bit 5 to bit 4 position
-    and.b   #$CF,D0							; 11001111 -> clear bits 5 and 4
-    or.b    D1,D0							; Insert swapped bits
-    or.b    D2,D0
+		nop
+		nop
+		move.b #$40,REGISTER_CNT1_DATA			; Cycle 6
+		nop
+		nop
+		move.b REGISTER_CNT1_DATA,D0
+		not D0
+		andi.b #$7,D0
+		lsl.b #$4,D0
+												; Swap bits so they are arranged like ABC in D7
+		move.b  D0,D1							; copy original byte
+		and.b   #$10,D1							; isolate bit 4
+		lsl.b   #1,D1							; move bit 4 to bit 5 position
+		move.b  D0,D2
+		and.b   #$20,D2							; isolate bit 5
+		lsr.b   #1,D2							; move bit 5 to bit 4 position
+		and.b   #$CF,D0							; 11001111 -> clear bits 5 and 4
+		or.b    D1,D0							; Insert swapped bits
+		or.b    D2,D0
 
 .notSixButtonController
-	move.b D0,RAM_SIX_BUTTON_STATE
-	or.b D0,D7								; Copy six button state into D7 to mirror controls onto XYZ
+		move.b D0,RAM_SIX_BUTTON_STATE
+		or.b D0,D7								; Copy six button state into D7 to mirror controls onto XYZ
 .secondControllerRead
-	move.b (A5),D6
-	movem (A7)+,D0/D1/D2
-	rts
+		move.b (A5),D6
+		movem (A7)+,D0/D1/D2
+		rts
 	endif
 
 DETOUR_SOUND_REQUEST_Z80_BUS:
@@ -155,11 +167,7 @@ DETOUR_SOUND_REQUEST_Z80_BUS:
 	move.b RAM_FADE_OUT_PLAY_TRACK_NUMBER,D0
 	tst.b D0
 	beq .noFadeOut
-	move.w  #$CD54,(MD_PLUS_OVERLAY_PORT)
-	move.w  #$1600,(MD_PLUS_CMD_PORT)
-	move.w  (MD_PLUS_RESPONSE_PORT),D4
-	move.w  #$0000,(MD_PLUS_OVERLAY_PORT)
-	tst.b D4
+	subi.w #$1,RAM_FADE_OUT_COUNTER
 	bne .noFadeOut
 	ori.w #$1200,D0
 	jsr WRITE_MD_PLUS_FUNCTION
@@ -237,6 +245,7 @@ DETOUR_HANDLE_SOUND_COMMAND:
 .fadeOutPlayMusic
 	move.b D1,RAM_FADE_OUT_PLAY_TRACK_NUMBER
 	move.w #$1390,D0
+	move.w #$10A,RAM_FADE_OUT_COUNTER
 	bra .doSoundCommand
 
 ; Helper Functions: --------------------------------------------------------------------------
