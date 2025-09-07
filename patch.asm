@@ -42,26 +42,6 @@ MED_PRO_VOLUME_REDUCTION set 0
 	INTERNAL_SOUND_COMMAND_FADE_OUT_PLAY_MUSIC: 	equ $03
 	INTERNAL_SOUND_COMMAND_TOGGLE_PAUSE_MUSIC:		equ $04
 
-	TRACK_01:						equ $00  ; 01 - Mad Dog 			(Stage 1)
-	TRACK_02:						equ $01  ; 02 - sKILL				(Stage 4)
-	TRACK_03:						equ $02  ; 03 - Encounter			(Stage 3)
-	TRACK_04:						equ $03  ; 04 - Mad Stalker			(Stage 2)
-	TRACK_05:						equ $04  ; 05 - On Tactics 	 		(Stage 5)
-	TRACK_06:						equ $05  ; 06 - Boiling Point 		(Stage 6 / Boss [1 for PS1, all for PCE])
-	TRACK_07:						equ $06  ; 07 - Crash Beat			(Last Boss)
-	TRACK_08:						equ $07  ; 08 - Artemis City 2142 	(Opening 1) 
-	TRACK_09:						equ $08  ; 09 - Aftermath			(Stage 3 end cutscene - Missing in PCE sountrack?)
-	TRACK_10:						equ $09  ; 10 - A Solution			(Ending) 
-	TRACK_11:						equ $0A  ; 11 - Omega Drivin'		(Player Select)
-	TRACK_STOP:						equ $0B
-	; Extended version tracks:
-	TRACK_12:						equ $0C  ; 12 - Climax				[Stage 6-1]
-	TRACK_13:						equ $0D  ; 13 - Core/Escape 		[Boss 6 for PS1, Stage 6-2 for PCE]
-	TRACK_14:						equ $0E	 ; 14 - Rising Dog			[Boss 2][PS1 only]
-	TRACK_15:						equ $0F	 ; 15 - Silpheed			[Boss 3][PS1 only]
-	TRACK_16:						equ $10	 ; 16 - Prisoner Beta		[Boss 4][PS1 only]
-	TRACK_17:						equ $11	 ; 17 - Kamui				[Boss 5][PS1 only]
-
 ; Overrides: ---------------------------------------------------------------------------------
 
 	org OFFSET_RESET_VECTOR
