@@ -2,6 +2,7 @@
 
 CHEATS set 0
 SIX_BUTTON_SUPPORT set 1
+MED_PRO_VOLUME_REDUCTION set 0
 
 ; Constants: ---------------------------------------------------------------------------------
 	TRACK_MAX_INDEX:				equ 25
@@ -94,7 +95,18 @@ SIX_BUTTON_SUPPORT set 1
 
 DETOUR_RESET_VECTOR:
 	move.w	#$1300,D0
-	jsr		WRITE_MD_PLUS_FUNCTION
+	jsr WRITE_MD_PLUS_FUNCTION
+
+	if MED_PRO_VOLUME_REDUCTION
+		move.w $A130D4,D0
+		andi.w #$FFF0,D0
+		cmpi.w #$55A0,D0
+		bne .notMegaEverdrivePro					; Since the Mega Everdrive PRO does not have volume adjustment options,
+		move.w #$15C8,D0							; manually detect it and set the volume to ~80%
+		jsr WRITE_MD_PLUS_FUNCTION
+.notMegaEverdrivePro
+	endif
+
 	incbin	"intro.bin"								; Show MD+ intro screen
 	jmp		RESET_VECTOR_ORIGINAL					; Return to game's original entry point
 
@@ -225,6 +237,8 @@ DETOUR_HANDLE_SOUND_COMMAND:
 .playMusic
 	cmpi.b #TRACK_MAX_INDEX,D1
 	bgt .unplayableTrackNumber
+	tst.b D1
+	beq .unplayableTrackNumber
 	move.w #$1200,D0
 	or.b D1,D0
 .unplayableTrackNumber
