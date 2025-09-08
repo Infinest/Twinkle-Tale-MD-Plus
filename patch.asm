@@ -118,19 +118,21 @@ DETOUR_READ_6_BUTTON:
 		move.b #$0,REGISTER_CNT1_DATA			; Cycle 5
 		nop
 		nop
-		move.b REGISTER_CNT1_DATA,D0
-		cmpi.b #%00110000,REGISTER_CNT1_DATA	; Check for 6 Button controller id
-		beq .isSixButtonController
-		clr.b D0
-		bra .notSixButtonController
-.isSixButtonController
-		nop
-		nop
 		move.b #$40,REGISTER_CNT1_DATA			; Cycle 6
 		nop
 		nop
 		move.b REGISTER_CNT1_DATA,D0
-		not D0
+		nop
+		nop
+		move.b #$0,REGISTER_CNT1_DATA			; Cycle 7
+		nop
+		nop
+		move.b REGISTER_CNT1_DATA,D1
+		andi #$F,D1
+		cmpi.b #$F,D1
+		bne .notSixButtonController
+
+		not.b D0
 		andi.b #$7,D0
 		lsl.b #$4,D0
 												; Swap bits so they are arranged like ABC in D7
@@ -144,9 +146,9 @@ DETOUR_READ_6_BUTTON:
 		or.b    D1,D0							; Insert swapped bits
 		or.b    D2,D0
 
-.notSixButtonController
 		move.b D0,RAM_SIX_BUTTON_STATE
 		or.b D0,D7								; Copy six button state into D7 to mirror controls onto XYZ
+.notSixButtonController
 .secondControllerRead
 		move.b (A5),D6
 		movem (A7)+,D0/D1/D2
@@ -230,8 +232,9 @@ DETOUR_HANDLE_SOUND_COMMAND:
 	move.b #$1,RAM_MUSIC_STOPPED
 	tst.b D1
 	beq .noFadeOutStop
-	move.b D1,D0
-	lsl.b #$4,D0
+	lsl.b #$4,D1
+	move.b #$D0,D0
+	sub.b D1,D0
 .noFadeOutStop
 	clr.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
 	bra .doSoundCommand
