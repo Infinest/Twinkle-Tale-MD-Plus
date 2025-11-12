@@ -3,6 +3,8 @@
 CHEATS set 0
 SIX_BUTTON_SUPPORT set 1
 MED_PRO_VOLUME_REDUCTION set 0
+DISABLE_CHECKSUM_CHECK set 1
+MD_PLUS set 1
 
 ; Constants: ---------------------------------------------------------------------------------
 	TRACK_MAX_INDEX:				equ 25
@@ -17,6 +19,7 @@ MED_PRO_VOLUME_REDUCTION set 0
 	OFFSET_RESET_VECTOR:			equ $00000004
 	OFFSET_SOUND_REQUEST_Z80_BUS:   equ $00000F06
 	OFFSET_AFTER_CONTROLLER_READ:	equ $000012AC
+	OFFSET_CHECKSUM_CHECK:			equ $00004812
 	OFFSET_START_PLAY_CALL:			equ $00005494
 	OFFSET_MOVEMENT_TURN_CODE:		equ $00008AB8
 	OFFSET_LOSE_HURT_FUNCTION:		equ $00008E5E
@@ -33,6 +36,7 @@ MED_PRO_VOLUME_REDUCTION set 0
 	RAM_MUSIC_STOPPED:				equ $FFFF51
 	RAM_FADE_OUT_COUNTER:			equ $FFFF52
 	RAM_SIX_BUTTON_STATE:			equ $FFFF54
+	RAM_STRAFE_ENABLED:				equ $FFFF56
 
 	REGISTER_CNT1_DATA:		equ $A10003
 	REGISTER_Z80_BUS_REQ:	equ $A11100 
@@ -44,8 +48,15 @@ MED_PRO_VOLUME_REDUCTION set 0
 
 ; Overrides: ---------------------------------------------------------------------------------
 
-	org OFFSET_RESET_VECTOR
-	dc.l DETOUR_RESET_VECTOR
+	if MD_PLUS
+		org OFFSET_RESET_VECTOR
+		dc.l DETOUR_RESET_VECTOR
+	endif
+
+	if DISABLE_CHECKSUM_CHECK
+		org OFFSET_CHECKSUM_CHECK
+		bra *+$16
+	endif
 
 	if CHEATS
 		org OFFSET_LOSE_HURT_FUNCTION
@@ -53,12 +64,16 @@ MED_PRO_VOLUME_REDUCTION set 0
 		nop
 	endif
 
-	org OFFSET_HANDLE_SOUND_COMMAND
-	jsr DETOUR_HANDLE_SOUND_COMMAND
+	if MD_PLUS
+		org OFFSET_HANDLE_SOUND_COMMAND
+		jsr DETOUR_HANDLE_SOUND_COMMAND
+	endif
 
-	org OFFSET_SOUND_REQUEST_Z80_BUS
-	jsr DETOUR_SOUND_REQUEST_Z80_BUS
-	nop
+	if MD_PLUS
+		org OFFSET_SOUND_REQUEST_Z80_BUS
+		jsr DETOUR_SOUND_REQUEST_Z80_BUS
+		nop
+	endif
 
 	if SIX_BUTTON_SUPPORT
 		org OFFSET_AFTER_CONTROLLER_READ
@@ -73,29 +88,34 @@ MED_PRO_VOLUME_REDUCTION set 0
 
 	org $00100000
 
+	if MD_PLUS
 DETOUR_RESET_VECTOR:
-	move.w	#$1300,D0
-	jsr WRITE_MD_PLUS_FUNCTION
-
-	if MED_PRO_VOLUME_REDUCTION
-		move.w $A130D4,D0
-		andi.w #$FFF0,D0
-		cmpi.w #$55A0,D0
-		bne .notMegaEverdrivePro					; Since the Mega Everdrive PRO does not have volume adjustment options,
-		move.w #$15C8,D0							; manually detect it and set the volume to ~80%
+		move.w	#$1300,D0
 		jsr WRITE_MD_PLUS_FUNCTION
-.notMegaEverdrivePro
-	endif
+
+		if MED_PRO_VOLUME_REDUCTION
+			move.w $A130D4,D0
+			andi.w #$FFF0,D0
+			cmpi.w #$55A0,D0
+			bne .notMegaEverdrivePro				; Since the Mega Everdrive PRO does not have volume adjustment options,
+			move.w #$15C8,D0						; manually detect it and set the volume to ~80%
+			jsr WRITE_MD_PLUS_FUNCTION
+	.notMegaEverdrivePro
+		endif
 
 	incbin	"intro.bin"								; Show MD+ intro screen
 	jmp		RESET_VECTOR_ORIGINAL					; Return to game's original entry point
+	endif MD_PLUS
 
 	if SIX_BUTTON_SUPPORT
 DETOUR_MOVEMENT:
 		move D0,-(A7)
 		move.b RAM_CONFIGURED_SHOOT_BUTTON_BIT,D0
+		cmpi.w #$1,(RAM_STRAFE_ENABLED)
+		bne .notStrafe
 		btst D0,RAM_SIX_BUTTON_STATE
 		bne .strafe
+.notStrafe
 		move.b D1,($26,A6)
 .strafe
 		move.w ($24,A6),D2
@@ -155,100 +175,106 @@ DETOUR_READ_6_BUTTON:
 		rts
 	endif
 
+	if MD_PLUS
 DETOUR_SOUND_REQUEST_Z80_BUS:
-	move.w D0,-(A7)
-	clr.w D0
-	move.b RAM_FADE_OUT_PLAY_TRACK_NUMBER,D0
-	tst.b D0
-	beq .noFadeOut
-	subi.w #$1,RAM_FADE_OUT_COUNTER
-	bne .noFadeOut
-	ori.w #$1200,D0
-	jsr WRITE_MD_PLUS_FUNCTION
-	clr.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
+		move.w D0,-(A7)
+		clr.w D0
+		move.b RAM_FADE_OUT_PLAY_TRACK_NUMBER,D0
+		tst.b D0
+		beq .noFadeOut
+		subi.w #$1,RAM_FADE_OUT_COUNTER
+		bne .noFadeOut
+		ori.w #$1200,D0
+		jsr WRITE_MD_PLUS_FUNCTION
+		clr.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
 .noFadeOut
-	move.w (A7)+,D0
-	move.w #$100,REGISTER_Z80_BUS_REQ
-	rts
+		move.w (A7)+,D0
+		move.w #$100,REGISTER_Z80_BUS_REQ
+		rts
 
 DETOUR_HANDLE_SOUND_COMMAND:
-	lea RAM_TRACK_PLAY_LIST.l,A0
-	movem.l D0/D2,-(A7)
-	move.w #$1300,D0
-	move.w D1,D2
-	lsr.w #8,D2
-	cmpi.b #INTERNAL_SOUND_COMMAND_TOGGLE_PAUSE_MUSIC,D2
-	beq .togglePauseMusic
-	cmpi.b #INTERNAL_SOUND_COMMAND_FADE_OUT_PLAY_MUSIC,D2
-	beq .fadeOutPlayMusic
-	cmpi.b #INTERNAL_SOUND_COMMAND_STOP_FADE_OUT_MUSIC,D2
-	beq .stopFadeOutMusic
-	cmpi.b #INTERNAL_SOUND_COMMAND_PLAY_MUSIC,D2
-	beq .playMusic
+		lea RAM_TRACK_PLAY_LIST.l,A0
+		movem.l D0/D2,-(A7)
+		move.w #$1300,D0
+		move.w D1,D2
+		lsr.w #8,D2
+		cmpi.b #INTERNAL_SOUND_COMMAND_TOGGLE_PAUSE_MUSIC,D2
+		beq .togglePauseMusic
+		cmpi.b #INTERNAL_SOUND_COMMAND_FADE_OUT_PLAY_MUSIC,D2
+		beq .fadeOutPlayMusic
+		cmpi.b #INTERNAL_SOUND_COMMAND_STOP_FADE_OUT_MUSIC,D2
+		beq .stopFadeOutMusic
+		cmpi.b #INTERNAL_SOUND_COMMAND_PLAY_MUSIC,D2
+		beq .playMusic
 .functionEnd
-	movem.l (A7)+,D0/D2
-	rts
+		movem.l (A7)+,D0/D2
+		rts
 
 .doSoundCommand
-	jsr WRITE_MD_PLUS_FUNCTION
+		jsr WRITE_MD_PLUS_FUNCTION
 .doNothing
-	move.b #$0,D1
-	bra .functionEnd
+		move.b #$0,D1
+		bra .functionEnd
 
 .togglePauseMusic
-	;movem.l D0-D7/A0-A6,-(A7)					; Take damage on start press
-	;jsr $8e04
-	;movem.l (A7)+,D0-D7/A0-A6
-	;bra .doNothing
-	tst.b RAM_MUSIC_STOPPED						; If the music has been stopped fully, do not pause/resume
-	bne .doNothing
-	cmpi.w #$38E,D3								; If not equal: Pause, if equal: resume
-	bne .isPause
-	move.w #$1400,D0
-	bra .doSoundCommand
+		;movem.l D0-D7/A0-A6,-(A7)				; Take damage on start press
+		;jsr $8e04
+		;movem.l (A7)+,D0-D7/A0-A6
+		;bra .doNothing
+		tst.b RAM_MUSIC_STOPPED					; If the music has been stopped fully, do not pause/resume
+		bne .doNothing
+		cmpi.w #$38E,D3							; If not equal: Pause, if equal: resume
+		bne .isPause
+		move.w #$1400,D0
+		bra .doSoundCommand
 .isPause
-	tst.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
-	beq .doSoundCommand
-	move.w #$1200,D0
-	or.b RAM_FADE_OUT_PLAY_TRACK_NUMBER,D0
-	clr.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
-	jsr WRITE_MD_PLUS_FUNCTION
-	move.w #$1300,D0
-	bra .doSoundCommand
+		tst.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
+		beq .doSoundCommand
+		move.w #$1200,D0
+		or.b RAM_FADE_OUT_PLAY_TRACK_NUMBER,D0
+		clr.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
+		jsr WRITE_MD_PLUS_FUNCTION
+		move.w #$1300,D0
+		bra .doSoundCommand
 
 .playMusic
-	cmpi.b #TRACK_MAX_INDEX,D1
-	bgt .unplayableTrackNumber
-	tst.b D1
-	beq .unplayableTrackNumber
-	move.w #$1200,D0
-	or.b D1,D0
+		cmpi.b #TRACK_MAX_INDEX,D1
+		bgt .unplayableTrackNumber
+		tst.b D1
+		beq .unplayableTrackNumber
+		move.w #$1200,D0
+		or.b D1,D0
 .unplayableTrackNumber
-	clr.b RAM_MUSIC_STOPPED
-	clr.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
-	bra .doSoundCommand
+		clr.b RAM_MUSIC_STOPPED
+		clr.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
+		bra .doSoundCommand
 
 .stopFadeOutMusic
-	move.b #$1,RAM_MUSIC_STOPPED
-	tst.b D1
-	beq .noFadeOutStop
-	lsl.b #$4,D1
-	move.b #$D0,D0
-	sub.b D1,D0
+		move.b #$1,RAM_MUSIC_STOPPED
+		tst.b D1
+		beq .noFadeOutStop
+		lsl.b #$4,D1
+		move.b #$D0,D0
+		sub.b D1,D0
 .noFadeOutStop
-	clr.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
-	bra .doSoundCommand
+		clr.b RAM_FADE_OUT_PLAY_TRACK_NUMBER
+		bra .doSoundCommand
 
 .fadeOutPlayMusic
-	move.b D1,RAM_FADE_OUT_PLAY_TRACK_NUMBER
-	move.w #$1390,D0
-	move.w #$10A,RAM_FADE_OUT_COUNTER
-	bra .doSoundCommand
+		move.b D1,RAM_FADE_OUT_PLAY_TRACK_NUMBER
+		move.w #$1390,D0
+		move.w #$10A,RAM_FADE_OUT_COUNTER
+		bra .doSoundCommand
 
 ; Helper Functions: --------------------------------------------------------------------------
 
 WRITE_MD_PLUS_FUNCTION:
-	move.w  #$CD54,(MD_PLUS_OVERLAY_PORT)			; Open interface
-	move.w  D0,(MD_PLUS_CMD_PORT)					; Send command to interface
-	move.w  #$0000,(MD_PLUS_OVERLAY_PORT)			; Close interface
-	rts
+		move.w  #$CD54,(MD_PLUS_OVERLAY_PORT)			; Open interface
+		move.w  D0,(MD_PLUS_CMD_PORT)					; Send command to interface
+		move.w  #$0000,(MD_PLUS_OVERLAY_PORT)			; Close interface
+		rts
+	endif
+
+	if SIX_BUTTON_SUPPORT
+		include "settings.asm"
+	endif
